@@ -1,5 +1,6 @@
 const axios = require('axios');
 const cheerio = require('cheerio');
+const { validateRequest } = require('./_auth');
 
 // Configuración de headers para evitar bloqueos
 const headers = {
@@ -694,12 +695,50 @@ module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,POST');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-API-Key');
 
   if (req.method === 'OPTIONS') {
     res.status(200).end();
     return;
   }
+
+  // Validar API Secret Key y Rate Limit
+  const validation = validateRequest(req);
+
+  if (!validation.valid) {
+    // Si es error de autenticación
+    if (validation.status === 401) {
+      return res.status(401).json({
+        error: 'Unauthorized',
+        message: 'API key inválida o faltante'
+      });
+    }
+
+    // Si es error de rate limit
+    if (validation.status === 429) {
+      res.setHeader('X-RateLimit-Limit', validation.rateLimit.limit.toString());
+      res.setHeader('X-RateLimit-Remaining', '0');
+      res.setHeader('X-RateLimit-Reset', validation.rateLimit.resetInSeconds.toString());
+
+      return res.status(429).json({
+        error: 'Rate limit exceeded',
+        rateLimitExceeded: true,
+        message: `Has excedido el límite de ${validation.rateLimit.limit} requests por hora.`,
+        details: {
+          limit: validation.rateLimit.limit,
+          current: validation.rateLimit.current,
+          remaining: 0,
+          resetInMinutes: validation.rateLimit.resetInMinutes,
+          resetInSeconds: validation.rateLimit.resetInSeconds
+        }
+      });
+    }
+  }
+
+  // Headers de rate limiting para requests exitosos
+  res.setHeader('X-RateLimit-Limit', validation.rateLimit.limit.toString());
+  res.setHeader('X-RateLimit-Remaining', validation.rateLimit.remaining.toString());
+  res.setHeader('X-RateLimit-Reset', validation.rateLimit.resetInSeconds.toString());
 
   try {
     const { url } = req.method === 'GET' ? req.query : req.body;

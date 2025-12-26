@@ -1,5 +1,6 @@
 const axios = require('axios');
 const cheerio = require('cheerio');
+const { validateRequest } = require('./_auth');
 
 const headers = {
   'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36',
@@ -11,12 +12,35 @@ module.exports = async function handler(req, res) {
   res.setHeader('Access-Control-Allow-Credentials', true);
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET,OPTIONS,POST');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, X-API-Key');
 
   if (req.method === 'OPTIONS') {
     res.status(200).end();
     return;
   }
+
+  // Validar API Secret Key y Rate Limit
+  const validation = validateRequest(req);
+
+  if (!validation.valid) {
+    if (validation.status === 401) {
+      return res.status(401).json({ error: 'Unauthorized' });
+    }
+    if (validation.status === 429) {
+      return res.status(429).json({
+        error: 'Rate limit exceeded',
+        rateLimitExceeded: true,
+        details: {
+          limit: validation.rateLimit.limit,
+          resetInMinutes: validation.rateLimit.resetInMinutes
+        }
+      });
+    }
+  }
+
+  res.setHeader('X-RateLimit-Limit', validation.rateLimit.limit.toString());
+  res.setHeader('X-RateLimit-Remaining', validation.rateLimit.remaining.toString());
+  res.setHeader('X-RateLimit-Reset', validation.rateLimit.resetInSeconds.toString());
 
   try {
     const { url } = req.method === 'GET' ? req.query : req.body;
