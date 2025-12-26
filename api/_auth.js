@@ -69,22 +69,45 @@ function validateRequest(req) {
                    req.headers['x-real-ip'] || 
                    'unknown';
 
-  // Verificar rate limit
-  const rateLimit = checkRateLimit(clientIp);
+  // Detectar si viene del frontend HTML (referer) o de Make.com/API directa
+  const referer = req.headers['referer'] || req.headers['origin'] || '';
+  const isFromFrontend = referer.includes('vercel.app') || referer.includes('localhost');
+  
+  // Solo aplicar rate limiting si viene del frontend HTML
+  // Make.com y otras integraciones NO tienen rate limit
+  if (isFromFrontend) {
+    const rateLimit = checkRateLimit(clientIp);
 
-  if (!rateLimit.allowed) {
+    if (!rateLimit.allowed) {
+      return {
+        valid: false,
+        error: 'Rate limit exceeded',
+        status: 429,
+        rateLimit
+      };
+    }
+
     return {
-      valid: false,
-      error: 'Rate limit exceeded',
-      status: 429,
-      rateLimit
+      valid: true,
+      rateLimit,
+      ip: clientIp,
+      source: 'frontend'
     };
   }
 
+  // Request desde Make.com u otra API - sin rate limit
   return {
     valid: true,
-    rateLimit,
-    ip: clientIp
+    rateLimit: {
+      allowed: true,
+      remaining: 999999,
+      resetInSeconds: 0,
+      resetInMinutes: 0,
+      current: 0,
+      limit: 999999
+    },
+    ip: clientIp,
+    source: 'api'
   };
 }
 

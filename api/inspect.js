@@ -516,16 +516,20 @@ function analyzeCustomization(themeInfo, plugins) {
   // Child theme (indica personalización)
   if (themeInfo.isChildTheme) {
     const parentName = themeInfo.parentTheme || 'theme base';
-    score += 40;
-    breakdown.push({ indicator: `Child theme de "${parentName}"`, points: 40, weight: 'muy fuerte' });
-    analysis.indicators.push(`🔧 Child theme de "${parentName}" (personalización)`);
     
-    // Si ya teníamos categoría de marketplace, cambiar a customized
+    // Si ya detectamos que es un marketplace (gratuito o premium), es solo personalización
     if (analysis.category === 'free-marketplace' || 
         analysis.category === 'premium-template' || 
         analysis.category === 'official-free') {
+      score += 5; // Pequeño boost, pero sigue siendo template
+      breakdown.push({ indicator: `Child theme de "${parentName}"`, points: 5, weight: 'leve' });
+      analysis.indicators.push(`🎨 Child theme de "${parentName}" (personalización menor)`);
       analysis.category = 'customized-template';
     } else {
+      // Si no sabemos qué es el parent, asumimos desarrollo custom
+      score += 40;
+      breakdown.push({ indicator: `Child theme de "${parentName}"`, points: 40, weight: 'muy fuerte' });
+      analysis.indicators.push(`🔧 Child theme de "${parentName}" (desarrollo personalizado)`);
       analysis.category = 'customized';
     }
   }
@@ -675,7 +679,7 @@ function analyzeCustomization(themeInfo, plugins) {
     'premium-template': '💎 Template Premium',
     'popular-template': '🎨 Template Popular',
     'customized': '🔧 Desarrollo Personalizado',
-    'customized-template': '🎨 Template Personalizado',
+    'customized-template': '🎨 Template con Personalización',
     'custom-development': '🛠️ Desarrollo Custom',
     'likely-custom': '🛠️ Probablemente Custom',
     'commercial-template': '📦 Template Comercial',
