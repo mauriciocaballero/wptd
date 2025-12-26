@@ -1,0 +1,12 @@
+*~
+.DS_Store
+.svn
+.cvs
+*.bak
+*.swp
+.htaccess
+Thumbs.db
+debug.log
+*.log
+backup-*
+index.html

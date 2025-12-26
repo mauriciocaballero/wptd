@@ -53,7 +53,7 @@ async function extractThemeInfo(html, baseUrl) {
     parentTheme: null
   };
 
-  // Buscar referencias al theme en el HTML
+  // MÉTODO 1: Buscar en los stylesheets
   const stylesheetLinks = $('link[rel="stylesheet"]').toArray();
   let themeStylesheetUrl = null;
 
@@ -65,50 +65,140 @@ async function extractThemeInfo(html, baseUrl) {
     }
   }
 
-  // Si encontramos el stylesheet del theme, intentar leerlo
+  // MÉTODO 2: Si no encontró style.css, buscar cualquier CSS del theme
+  if (!themeStylesheetUrl) {
+    for (const link of stylesheetLinks) {
+      const href = $(link).attr('href');
+      if (href && href.includes('/themes/')) {
+        const match = href.match(/\/themes\/([^\/]+)\//);
+        if (match) {
+          const themeName = match[1];
+          // Construir la URL del style.css
+          const themeUrl = new URL(href, baseUrl);
+          const pathParts = themeUrl.pathname.split('/themes/')[0];
+          themeStylesheetUrl = `${themeUrl.origin}${pathParts}/wp-content/themes/${themeName}/style.css`;
+          themeInfo.name = themeName;
+          break;
+        }
+      }
+    }
+  }
+
+  // MÉTODO 3: Buscar en scripts también
+  if (!themeStylesheetUrl) {
+    const scripts = $('script[src]').toArray();
+    for (const script of scripts) {
+      const src = $(script).attr('src');
+      if (src && src.includes('/themes/')) {
+        const match = src.match(/\/themes\/([^\/]+)\//);
+        if (match) {
+          const themeName = match[1];
+          const themeUrl = new URL(src, baseUrl);
+          const pathParts = themeUrl.pathname.split('/themes/')[0];
+          themeStylesheetUrl = `${themeUrl.origin}${pathParts}/wp-content/themes/${themeName}/style.css`;
+          themeInfo.name = themeName;
+          break;
+        }
+      }
+    }
+  }
+
+  // MÉTODO 4: Buscar en comentarios HTML
+  if (!themeInfo.name) {
+    const htmlContent = html.toString();
+    const themeCommentMatch = htmlContent.match(/<!--[^>]*themes?\/([^\/\s]+)/i);
+    if (themeCommentMatch) {
+      themeInfo.name = themeCommentMatch[1];
+      const themeUrl = new URL(baseUrl);
+      themeStylesheetUrl = `${themeUrl.origin}/wp-content/themes/${themeInfo.name}/style.css`;
+    }
+  }
+
+  // MÉTODO 5: Intentar con la REST API
+  if (!themeInfo.name) {
+    try {
+      const restUrl = new URL('/wp-json/wp/v2/themes', baseUrl).href;
+      const restResponse = await axios.get(restUrl, { 
+        headers, 
+        timeout: 5000,
+        validateStatus: status => status < 500 
+      });
+      
+      if (restResponse.status === 200 && restResponse.data) {
+        // Buscar el theme activo
+        const activeTheme = Object.values(restResponse.data).find(theme => theme.status === 'active');
+        if (activeTheme) {
+          themeInfo.name = activeTheme.stylesheet || activeTheme.name;
+          themeInfo.version = activeTheme.version;
+          themeInfo.author = activeTheme.author?.name || activeTheme.author;
+          themeInfo.description = activeTheme.description?.raw || activeTheme.description;
+          themeInfo.uri = activeTheme.theme_uri;
+          
+          if (activeTheme.template && activeTheme.template !== activeTheme.stylesheet) {
+            themeInfo.isChildTheme = true;
+            themeInfo.parentTheme = activeTheme.template;
+          }
+          
+          // Construir URL del stylesheet
+          const themeUrl = new URL(baseUrl);
+          themeStylesheetUrl = `${themeUrl.origin}/wp-content/themes/${themeInfo.name}/style.css`;
+        }
+      }
+    } catch (error) {
+      // No pasa nada si falla
+    }
+  }
+
+  // Si encontramos el stylesheet URL, intentar leerlo
   if (themeStylesheetUrl) {
     try {
       const styleResponse = await axios.get(themeStylesheetUrl, { 
         headers, 
-        timeout: 5000 
+        timeout: 5000,
+        validateStatus: status => status < 400
       });
       
-      themeInfo.stylesheetUrl = themeStylesheetUrl;
-      
-      // Extraer el nombre del theme de la URL
-      const themeMatch = themeStylesheetUrl.match(/\/themes\/([^\/]+)\//);
-      if (themeMatch) {
-        themeInfo.name = themeMatch[1];
-      }
-
-      // Parsear el header del CSS
-      const styleContent = styleResponse.data;
-      const headerMatch = styleContent.match(/\/\*\s*([\s\S]*?)\*\//);
-      
-      if (headerMatch) {
-        const header = headerMatch[1];
+      if (styleResponse.status === 200) {
+        themeInfo.stylesheetUrl = themeStylesheetUrl;
         
-        // Extraer campos del header
-        const nameMatch = header.match(/Theme Name:\s*(.+)/i);
-        const versionMatch = header.match(/Version:\s*(.+)/i);
-        const authorMatch = header.match(/Author:\s*(.+)/i);
-        const uriMatch = header.match(/Theme URI:\s*(.+)/i);
-        const descMatch = header.match(/Description:\s*(.+)/i);
-        const templateMatch = header.match(/Template:\s*(.+)/i);
+        // Si no teníamos el nombre, extraerlo de la URL
+        if (!themeInfo.name) {
+          const themeMatch = themeStylesheetUrl.match(/\/themes\/([^\/]+)\//);
+          if (themeMatch) {
+            themeInfo.name = themeMatch[1];
+          }
+        }
 
-        if (nameMatch) themeInfo.name = nameMatch[1].trim();
-        if (versionMatch) themeInfo.version = versionMatch[1].trim();
-        if (authorMatch) themeInfo.author = authorMatch[1].trim();
-        if (uriMatch) themeInfo.uri = uriMatch[1].trim();
-        if (descMatch) themeInfo.description = descMatch[1].trim();
+        // Parsear el header del CSS
+        const styleContent = styleResponse.data;
+        const headerMatch = styleContent.match(/\/\*\s*([\s\S]*?)\*\//);
         
-        if (templateMatch) {
-          themeInfo.isChildTheme = true;
-          themeInfo.parentTheme = templateMatch[1].trim();
+        if (headerMatch) {
+          const header = headerMatch[1];
+          
+          // Extraer campos del header
+          const nameMatch = header.match(/Theme Name:\s*(.+)/i);
+          const versionMatch = header.match(/Version:\s*(.+)/i);
+          const authorMatch = header.match(/Author:\s*(.+)/i);
+          const uriMatch = header.match(/Theme URI:\s*(.+)/i);
+          const descMatch = header.match(/Description:\s*(.+)/i);
+          const templateMatch = header.match(/Template:\s*(.+)/i);
+
+          if (nameMatch) themeInfo.name = nameMatch[1].trim();
+          if (versionMatch) themeInfo.version = versionMatch[1].trim();
+          if (authorMatch) themeInfo.author = authorMatch[1].trim();
+          if (uriMatch) themeInfo.uri = uriMatch[1].trim();
+          if (descMatch) themeInfo.description = descMatch[1].trim();
+          
+          if (templateMatch) {
+            themeInfo.isChildTheme = true;
+            themeInfo.parentTheme = templateMatch[1].trim();
+          }
         }
       }
     } catch (error) {
       console.error('Error fetching theme stylesheet:', error.message);
+      // Si falla el fetch del style.css, al menos tenemos el nombre del theme
     }
   }
 
@@ -147,6 +237,58 @@ async function detectPlugins(html, baseUrl) {
     }
   }
 
+  // Buscar también en comentarios HTML (algunos plugins dejan marcas)
+  const htmlContent = html.toString();
+  const pluginComments = htmlContent.match(/<!--[^>]*wp-content\/plugins\/([^\/\s]+)/gi) || [];
+  
+  for (const comment of pluginComments) {
+    const match = comment.match(/plugins\/([^\/\s]+)/);
+    if (match) {
+      const pluginSlug = match[1];
+      if (!plugins.has(pluginSlug)) {
+        plugins.set(pluginSlug, {
+          slug: pluginSlug,
+          name: pluginSlug.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+          detectedFiles: ['HTML comment'],
+          wpOrgUrl: `https://wordpress.org/plugins/${pluginSlug}/`,
+          info: null
+        });
+      }
+    }
+  }
+
+  // Buscar en meta tags y data attributes
+  $('[class*="wp-"], [id*="wp-"], [data-plugin], [class*="plugin-"]').each((i, el) => {
+    const classNames = $(el).attr('class') || '';
+    const id = $(el).attr('id') || '';
+    const combined = `${classNames} ${id}`;
+    
+    // Buscar patrones comunes de plugins
+    const patterns = [
+      /elementor/i,
+      /wpforms/i,
+      /contact-form-7/i,
+      /yoast/i,
+      /woocommerce/i,
+      /jetpack/i
+    ];
+    
+    for (const pattern of patterns) {
+      if (pattern.test(combined)) {
+        const pluginSlug = pattern.source.replace(/\//g, '').toLowerCase();
+        if (!plugins.has(pluginSlug)) {
+          plugins.set(pluginSlug, {
+            slug: pluginSlug,
+            name: pluginSlug.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+            detectedFiles: ['HTML attributes'],
+            wpOrgUrl: `https://wordpress.org/plugins/${pluginSlug}/`,
+            info: null
+          });
+        }
+      }
+    }
+  });
+
   // Intentar obtener información adicional de wordpress.org
   const pluginsArray = Array.from(plugins.values());
   
@@ -159,7 +301,7 @@ async function detectPlugins(html, baseUrl) {
           validateStatus: status => status < 500
         });
         
-        if (response.status === 200 && response.data) {
+        if (response.status === 200 && response.data && !response.data.error) {
           plugin.info = {
             name: response.data.name,
             version: response.data.version,
