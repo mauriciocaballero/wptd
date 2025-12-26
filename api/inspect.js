@@ -252,6 +252,31 @@ async function extractThemeInfo(html, baseUrl) {
       .replace(/\b\w/g, l => l.toUpperCase());
   }
 
+  // Detectar child themes por patrones en el nombre (cuando no tienen Template: header)
+  if (!themeInfo.isChildTheme && themeInfo.name) {
+    const childPatterns = [
+      /child/i,
+      /alt$/i,        // "Something Alt"
+      /-alt$/i,       // "Something-alt"
+      /custom/i,
+      /modified/i,
+      /personalized/i
+    ];
+    
+    const isLikelyChild = childPatterns.some(pattern => pattern.test(themeInfo.name));
+    
+    if (isLikelyChild) {
+      themeInfo.isChildTheme = true;
+      // Intentar inferir el parent theme del nombre
+      const baseName = themeInfo.name
+        .replace(/\s*(child|alt|custom|modified|personalized)\s*$/i, '')
+        .trim();
+      if (baseName && baseName !== themeInfo.name) {
+        themeInfo.parentTheme = baseName;
+      }
+    }
+  }
+
   // Intentar obtener más info del meta description si tenemos el nombre
   if (themeInfo.name && !themeInfo.description) {
     themeInfo.description = description || null;
@@ -439,27 +464,54 @@ function analyzeCustomization(themeInfo, plugins) {
   }
 
   // Themes de marketplaces premium (ThemeForest, etc.)
-  const marketplaces = ['themeforest.net', 'elegantthemes.com', 'studiopress.com'];
-  const isMarketplace = marketplaces.some(m => themeInfo.uri?.includes(m));
+  const premiumMarketplaces = ['themeforest.net', 'elegantthemes.com', 'studiopress.com', 'mojo-themes.com'];
+  const isPremiumMarketplace = premiumMarketplaces.some(m => themeInfo.uri?.includes(m));
   
-  if (isMarketplace) {
+  if (isPremiumMarketplace) {
     analysis.indicators.push(`Theme premium de marketplace: ${themeInfo.uri?.split('/')[2] || 'marketplace'}`);
     analysis.confidence -= 35;
     analysis.category = 'premium-template';
   }
 
+  // Marketplaces de themes gratuitos
+  const freeMarketplaces = [
+    'voilathemes.com',
+    'themegrill.com', 
+    'acmethemes.com',
+    'themeinwp.com',
+    'hashtagthemes.com'
+  ];
+  const isFreeMarketplace = freeMarketplaces.some(m => themeInfo.uri?.includes(m));
+  
+  if (isFreeMarketplace && !analysis.category) {
+    analysis.indicators.push(`Theme gratuito de: ${themeInfo.uri?.split('/')[2] || 'proveedor'}`);
+    analysis.confidence -= 25;
+    analysis.category = 'free-marketplace';
+  }
+
   // Child themes generalmente son customizaciones
   if (themeInfo.isChildTheme) {
-    analysis.indicators.push(`Child theme de ${themeInfo.parentTheme} (indica personalización)`);
+    const parentName = themeInfo.parentTheme || 'theme base';
+    analysis.indicators.push(`Child theme de "${parentName}" (personalización)`);
     analysis.confidence += 45;
-    analysis.category = 'customized';
+    
+    // Si es child de un template gratuito/premium, es customización
+    if (analysis.category === 'free-marketplace' || analysis.category === 'premium-template' || analysis.category === 'official-free') {
+      analysis.category = 'customized-template';
+    } else {
+      analysis.category = 'customized';
+    }
   }
 
   // Themes sin URI pública o con dominio custom
   if (themeInfo.name && !themeInfo.uri) {
     analysis.indicators.push('Theme sin URI pública (posible desarrollo custom)');
     analysis.confidence += 25;
-  } else if (themeInfo.uri && !themeInfo.uri.includes('wordpress.org') && !isMarketplace) {
+  } else if (themeInfo.uri && 
+             !themeInfo.uri.includes('wordpress.org') && 
+             !isPremiumMarketplace && 
+             !isFreeMarketplace &&
+             !themeInfo.isChildTheme) {
     analysis.indicators.push('Theme con URI personalizada');
     analysis.confidence += 20;
   }
@@ -469,13 +521,14 @@ function analyzeCustomization(themeInfo, plugins) {
     'astra', 'generatepress', 'oceanwp', 'neve', 'kadence',
     'hello-elementor', 'hello elementor', 'blocksy', 'twentytwenty',
     'avada', 'divi', 'enfold', 'bridge', 'betheme', 'the7',
-    'flatsome', 'salient', 'x theme', 'jupiter', 'uncode'
+    'flatsome', 'salient', 'x theme', 'jupiter', 'uncode',
+    'web development', 'business theme', 'corporate'
   ];
 
   const themeName = themeInfo.name?.toLowerCase() || '';
   const matchedTheme = commonThemes.find(common => themeName.includes(common));
   
-  if (matchedTheme) {
+  if (matchedTheme && !themeInfo.isChildTheme) {
     analysis.indicators.push(`Theme popular/comercial: ${themeInfo.name}`);
     analysis.confidence -= 25;
     if (!analysis.category || analysis.category === 'unknown') {
@@ -489,22 +542,24 @@ function analyzeCustomization(themeInfo, plugins) {
     { slug: 'wpbakery', name: 'WPBakery', weight: -20 },
     { slug: 'beaver-builder', name: 'Beaver Builder', weight: -15 },
     { slug: 'divi-builder', name: 'Divi Builder', weight: -20 },
-    { slug: 'oxygen', name: 'Oxygen', weight: -10 }
+    { slug: 'oxygen', name: 'Oxygen', weight: -10 },
+    { slug: 'siteorigin', name: 'SiteOrigin', weight: -15 }
   ];
 
   for (const builder of pageBuilders) {
     const hasBuilder = plugins.some(p => p.slug.includes(builder.slug));
-    if (hasBuilder) {
-      analysis.indicators.push(`Usa ${builder.name} (común en templates comerciales)`);
+    if (hasBuilder && !themeInfo.isChildTheme) {
+      analysis.indicators.push(`Usa ${builder.name} (común en templates)`);
       analysis.confidence += builder.weight;
     }
   }
 
   // Plugins premium exclusivos de themes
-  const themePlugins = plugins.filter(p => 
-    p.slug.includes(themeName.toLowerCase().replace(/\s+/g, '-')) ||
-    (themeInfo.author && p.slug.includes(themeInfo.author.toLowerCase().replace(/\s+/g, '-')))
-  );
+  const themePlugins = plugins.filter(p => {
+    const themeSlug = themeName.toLowerCase().replace(/\s+/g, '-');
+    const authorSlug = themeInfo.author?.toLowerCase().replace(/\s+/g, '-') || '';
+    return p.slug.includes(themeSlug) || (authorSlug && p.slug.includes(authorSlug));
+  });
 
   if (themePlugins.length > 0) {
     analysis.indicators.push(`${themePlugins.length} plugin(s) exclusivo(s) del theme`);
@@ -513,7 +568,7 @@ function analyzeCustomization(themeInfo, plugins) {
 
   // Muchos plugins pueden indicar customización
   if (plugins.length > 10) {
-    analysis.indicators.push(`${plugins.length} plugins detectados (posible customización extensa)`);
+    analysis.indicators.push(`${plugins.length} plugins (posible customización extensa)`);
     analysis.confidence += 10;
   }
 
@@ -533,9 +588,11 @@ function analyzeCustomization(themeInfo, plugins) {
   // Definir labels amigables
   const categoryLabels = {
     'official-free': '📦 Template Gratuito (WordPress.org)',
-    'premium-template': '💎 Template Premium (Marketplace)',
+    'free-marketplace': '🆓 Template Gratuito',
+    'premium-template': '💎 Template Premium',
     'popular-template': '🎨 Template Popular',
-    'customized': '🔧 Template Personalizado (Child Theme)',
+    'customized': '🔧 Desarrollo Personalizado (Child Theme)',
+    'customized-template': '🎨 Template Personalizado',
     'custom-development': '🛠️ Desarrollo Custom',
     'commercial-template': '📦 Template Comercial',
     'unknown': '❓ No Determinado'
