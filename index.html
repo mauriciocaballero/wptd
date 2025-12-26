@@ -1,0 +1,325 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>WordPress Inspector - Spiga Studio</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap');
+        body { font-family: 'Inter', sans-serif; }
+    </style>
+</head>
+<body class="bg-gradient-to-br from-gray-50 to-gray-100 min-h-screen">
+    <div class="max-w-6xl mx-auto px-4 py-12">
+        <!-- Header -->
+        <div class="text-center mb-12">
+            <h1 class="text-5xl font-bold text-gray-900 mb-3">
+                WordPress Inspector
+            </h1>
+            <p class="text-xl text-gray-600">
+                Analiza cualquier sitio WordPress y descubre su tecnología
+            </p>
+            <p class="text-sm text-gray-500 mt-2">
+                by <span class="font-semibold">Spiga Studio</span>
+            </p>
+        </div>
+
+        <!-- Input Section -->
+        <div class="bg-white rounded-2xl shadow-xl p-8 mb-8">
+            <div class="flex flex-col md:flex-row gap-4">
+                <input 
+                    type="url" 
+                    id="urlInput" 
+                    placeholder="https://ejemplo.com"
+                    class="flex-1 px-6 py-4 border-2 border-gray-200 rounded-xl focus:ring-2 focus:ring-blue-500 focus:border-transparent text-lg"
+                    onkeypress="if(event.key === 'Enter') inspectSite()"
+                />
+                <button 
+                    onclick="inspectSite()" 
+                    class="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-8 py-4 rounded-xl hover:from-blue-700 hover:to-blue-800 font-semibold text-lg shadow-lg hover:shadow-xl transition-all"
+                >
+                    🔍 Inspeccionar
+                </button>
+            </div>
+
+            <!-- Quick Links -->
+            <div class="mt-6 flex flex-wrap gap-2">
+                <p class="text-sm text-gray-500 w-full mb-2">Prueba con estos ejemplos:</p>
+                <button onclick="setUrl('https://wordpress.org')" class="text-xs bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded-full text-gray-700">
+                    WordPress.org
+                </button>
+                <button onclick="setUrl('https://techcrunch.com')" class="text-xs bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded-full text-gray-700">
+                    TechCrunch
+                </button>
+                <button onclick="setUrl('https://www.whitehouse.gov')" class="text-xs bg-gray-100 hover:bg-gray-200 px-3 py-1 rounded-full text-gray-700">
+                    WhiteHouse.gov
+                </button>
+            </div>
+        </div>
+
+        <!-- Loading State -->
+        <div id="loading" class="hidden">
+            <div class="bg-white rounded-2xl shadow-xl p-12 text-center">
+                <div class="animate-spin rounded-full h-16 w-16 border-4 border-blue-600 border-t-transparent mx-auto mb-4"></div>
+                <p class="text-xl text-gray-600 font-medium">Analizando sitio...</p>
+                <p class="text-sm text-gray-500 mt-2">Esto puede tomar unos segundos</p>
+            </div>
+        </div>
+
+        <!-- Results -->
+        <div id="results" class="hidden"></div>
+    </div>
+
+    <script>
+        const API_URL = 'http://localhost:3000/api/inspect'; // Cambia esto por tu URL de Vercel en producción
+
+        function setUrl(url) {
+            document.getElementById('urlInput').value = url;
+        }
+
+        async function inspectSite() {
+            const url = document.getElementById('urlInput').value.trim();
+            
+            if (!url) {
+                alert('Por favor ingresa una URL válida');
+                return;
+            }
+
+            const loading = document.getElementById('loading');
+            const results = document.getElementById('results');
+            
+            loading.classList.remove('hidden');
+            results.classList.add('hidden');
+            results.innerHTML = '';
+
+            try {
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify({ url })
+                });
+
+                const data = await response.json();
+                
+                loading.classList.add('hidden');
+                results.classList.remove('hidden');
+
+                if (response.status === 400 || response.status === 500) {
+                    results.innerHTML = `
+                        <div class="bg-red-50 border-2 border-red-200 rounded-2xl p-8 text-center">
+                            <div class="text-6xl mb-4">❌</div>
+                            <p class="text-2xl font-bold text-red-900 mb-2">Error</p>
+                            <p class="text-red-700">${data.message || data.error}</p>
+                        </div>
+                    `;
+                    return;
+                }
+                
+                if (!data.isWordPress) {
+                    results.innerHTML = `
+                        <div class="bg-yellow-50 border-2 border-yellow-200 rounded-2xl p-8 text-center">
+                            <div class="text-6xl mb-4">⚠️</div>
+                            <p class="text-2xl font-bold text-gray-900 mb-2">${data.message}</p>
+                            <div class="mt-6 text-left max-w-md mx-auto">
+                                <p class="text-sm font-semibold text-gray-700 mb-2">Señales de detección:</p>
+                                <div class="bg-white rounded-lg p-4 space-y-1 text-sm">
+                                    ${Object.entries(data.signals).map(([key, value]) => `
+                                        <div class="flex items-center gap-2">
+                                            <span class="${value ? 'text-green-500' : 'text-red-500'}">${value ? '✓' : '✗'}</span>
+                                            <span class="text-gray-600">${key}</span>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                    return;
+                }
+
+                // Success - WordPress detected
+                const custom = data.customization;
+                const theme = data.theme;
+                const plugins = data.plugins;
+
+                results.innerHTML = `
+                    <!-- Header Card -->
+                    <div class="bg-gradient-to-r from-green-500 to-green-600 rounded-2xl shadow-xl p-8 mb-6 text-white">
+                        <div class="flex items-center gap-4 mb-4">
+                            <div class="text-6xl">✅</div>
+                            <div>
+                                <h2 class="text-3xl font-bold">WordPress Detectado</h2>
+                                <p class="text-green-100 text-sm mt-1">Escaneado: ${new Date(data.scannedAt).toLocaleString('es-MX')}</p>
+                            </div>
+                        </div>
+                        
+                        <!-- Customization Badge -->
+                        <div class="mt-6 inline-block">
+                            <div class="bg-white/20 backdrop-blur-sm rounded-xl px-6 py-3">
+                                <p class="text-sm text-white/80 mb-1">Tipo de Desarrollo</p>
+                                <p class="text-2xl font-bold">
+                                    ${custom.isCustom ? '🛠️ Desarrollo Custom' : '📦 Template Comercial'}
+                                </p>
+                                <div class="mt-2 bg-white/20 rounded-full h-2 w-48">
+                                    <div class="bg-white rounded-full h-2 transition-all" style="width: ${custom.confidence}%"></div>
+                                </div>
+                                <p class="text-xs text-white/70 mt-1">Confianza: ${custom.confidence}%</p>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="grid md:grid-cols-2 gap-6 mb-6">
+                        <!-- Theme Card -->
+                        <div class="bg-white rounded-2xl shadow-xl p-6">
+                            <div class="flex items-center gap-3 mb-4">
+                                <div class="text-3xl">🎨</div>
+                                <h3 class="text-2xl font-bold text-gray-900">Theme</h3>
+                            </div>
+                            
+                            ${theme.name ? `
+                                <div class="bg-gradient-to-br from-purple-50 to-blue-50 rounded-xl p-5 mb-4">
+                                    <p class="text-xl font-bold text-gray-900 mb-2">${theme.name}</p>
+                                    ${theme.version ? `<p class="text-sm text-gray-600 mb-1">📌 Versión: ${theme.version}</p>` : ''}
+                                    ${theme.author ? `<p class="text-sm text-gray-600 mb-1">👤 Autor: ${theme.author}</p>` : ''}
+                                    ${theme.isChildTheme ? `
+                                        <div class="mt-3 pt-3 border-t border-purple-200">
+                                            <p class="text-sm font-semibold text-purple-700">🔗 Child Theme</p>
+                                            <p class="text-xs text-gray-600">Parent: ${theme.parentTheme}</p>
+                                        </div>
+                                    ` : ''}
+                                </div>
+                                
+                                ${theme.description ? `
+                                    <p class="text-sm text-gray-600 leading-relaxed mb-4">${theme.description}</p>
+                                ` : ''}
+                                
+                                ${theme.stylesheetUrl ? `
+                                    <a href="${theme.stylesheetUrl}" target="_blank" 
+                                       class="text-sm text-blue-600 hover:text-blue-700 font-medium inline-flex items-center gap-1">
+                                        Ver stylesheet completo →
+                                    </a>
+                                ` : ''}
+                            ` : `
+                                <p class="text-gray-500 text-center py-8">No se pudo detectar el theme</p>
+                            `}
+                        </div>
+
+                        <!-- Analysis Card -->
+                        <div class="bg-white rounded-2xl shadow-xl p-6">
+                            <div class="flex items-center gap-3 mb-4">
+                                <div class="text-3xl">📊</div>
+                                <h3 class="text-2xl font-bold text-gray-900">Análisis</h3>
+                            </div>
+
+                            <div class="space-y-3">
+                                ${custom.indicators.map(indicator => `
+                                    <div class="flex items-start gap-2 bg-gray-50 rounded-lg p-3">
+                                        <div class="text-lg">•</div>
+                                        <p class="text-sm text-gray-700 flex-1">${indicator}</p>
+                                    </div>
+                                `).join('')}
+                            </div>
+
+                            <div class="mt-6 pt-6 border-t border-gray-200">
+                                <p class="text-xs font-semibold text-gray-500 mb-3">SEÑALES DE DETECCIÓN</p>
+                                <div class="grid grid-cols-2 gap-2">
+                                    ${Object.entries(data.detectionSignals).map(([key, value]) => `
+                                        <div class="flex items-center gap-2 text-xs">
+                                            <span class="${value ? 'text-green-500' : 'text-gray-300'}">${value ? '✓' : '✗'}</span>
+                                            <span class="text-gray-600">${key}</span>
+                                        </div>
+                                    `).join('')}
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Plugins Card -->
+                    <div class="bg-white rounded-2xl shadow-xl p-6">
+                        <div class="flex items-center justify-between mb-6">
+                            <div class="flex items-center gap-3">
+                                <div class="text-3xl">🔌</div>
+                                <h3 class="text-2xl font-bold text-gray-900">
+                                    Plugins Detectados
+                                </h3>
+                            </div>
+                            <span class="bg-blue-100 text-blue-800 px-4 py-2 rounded-full font-bold">
+                                ${plugins.count}
+                            </span>
+                        </div>
+
+                        ${plugins.count > 0 ? `
+                            <div class="grid md:grid-cols-2 gap-4">
+                                ${plugins.list.map(plugin => `
+                                    <div class="border-2 border-gray-100 rounded-xl p-4 hover:border-blue-200 transition-all">
+                                        <div class="flex items-start justify-between mb-2">
+                                            <p class="font-bold text-gray-900 flex-1">
+                                                ${plugin.info?.name || plugin.name}
+                                            </p>
+                                            ${plugin.info?.version ? `
+                                                <span class="text-xs bg-gray-100 text-gray-600 px-2 py-1 rounded">
+                                                    v${plugin.info.version}
+                                                </span>
+                                            ` : ''}
+                                        </div>
+
+                                        ${plugin.info?.description ? `
+                                            <p class="text-sm text-gray-600 mb-3 line-clamp-2">
+                                                ${plugin.info.description}
+                                            </p>
+                                        ` : ''}
+
+                                        <div class="flex items-center justify-between text-xs text-gray-500">
+                                            ${plugin.info?.activeInstalls ? `
+                                                <span>📥 ${plugin.info.activeInstalls.toLocaleString()}+ instalaciones</span>
+                                            ` : `<span></span>`}
+                                            
+                                            ${plugin.info?.rating ? `
+                                                <span class="flex items-center gap-1">
+                                                    ⭐ ${plugin.info.rating}/100
+                                                </span>
+                                            ` : ''}
+                                        </div>
+
+                                        ${plugin.info ? `
+                                            <div class="mt-3 pt-3 border-t border-gray-100 flex items-center justify-between text-xs">
+                                                <span class="text-gray-500">
+                                                    ${plugin.info.author}
+                                                </span>
+                                                <a href="${plugin.wpOrgUrl}" target="_blank" 
+                                                   class="text-blue-600 hover:text-blue-700 font-medium">
+                                                    Ver en WP.org →
+                                                </a>
+                                            </div>
+                                        ` : ''}
+                                    </div>
+                                `).join('')}
+                            </div>
+                        ` : `
+                            <div class="text-center py-12 text-gray-500">
+                                <p class="text-4xl mb-3">🔍</p>
+                                <p>No se detectaron plugins en el frontend</p>
+                                <p class="text-sm mt-2">Algunos plugins pueden no cargar assets visibles</p>
+                            </div>
+                        `}
+                    </div>
+                `;
+
+            } catch (error) {
+                loading.classList.add('hidden');
+                results.classList.remove('hidden');
+                results.innerHTML = `
+                    <div class="bg-red-50 border-2 border-red-200 rounded-2xl p-8 text-center">
+                        <div class="text-6xl mb-4">🚫</div>
+                        <p class="text-2xl font-bold text-red-900 mb-2">Error de Conexión</p>
+                        <p class="text-red-700 mb-4">${error.message}</p>
+                        <p class="text-sm text-red-600">Verifica que la API esté corriendo o que la URL sea correcta</p>
+                    </div>
+                `;
+            }
+        }
+    </script>
+</body>
+</html>
