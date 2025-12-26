@@ -782,18 +782,18 @@ function analyzeCustomization(themeInfo, plugins) {
 
   // Labels finales
   const categoryLabels = {
-    'official-free': '📦 Template Gratuito (WordPress.org)',
-    'free-marketplace': '🆓 Template Gratuito',
-    'premium-template': '💎 Template Premium',
-    'popular-template': '🎨 Template Popular',
-    'customized': '🔧 Desarrollo Personalizado',
-    'customized-template': '🎨 Template con Personalización',
-    'custom-development': '🛠️ Desarrollo Custom',
-    'likely-custom': '🛠️ Probablemente Custom',
-    'commercial-template': '📦 Template Comercial',
-    'likely-template': '📦 Probablemente Template',
-    'uncertain': '❓ Indeterminado',
-    'unknown': '❓ No Determinado'
+    'official-free': 'Template Gratuito (WordPress.org)',
+    'free-marketplace': 'Template Gratuito',
+    'premium-template': 'Template Premium',
+    'popular-template': 'Template Popular',
+    'customized': 'Desarrollo Personalizado',
+    'customized-template': 'Template con Personalización',
+    'custom-development': 'Desarrollo Custom',
+    'likely-custom': 'Probablemente Custom',
+    'commercial-template': 'Template Comercial',
+    'likely-template': 'Probablemente Template',
+    'uncertain': 'Indeterminado',
+    'unknown': 'No Determinado'
   };
 
   analysis.categoryLabel = categoryLabels[analysis.category];
