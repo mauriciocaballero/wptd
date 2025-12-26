@@ -517,7 +517,7 @@ function analyzeCustomization(themeInfo, plugins) {
   if (themeInfo.isChildTheme) {
     const parentName = themeInfo.parentTheme || 'theme base';
     
-    // Si ya detectamos que es un marketplace (gratuito o premium), es solo personalización
+    // Si ya detectamos que es un marketplace (gratuito o premium), es solo personalización menor
     if (analysis.category === 'free-marketplace' || 
         analysis.category === 'premium-template' || 
         analysis.category === 'official-free') {
@@ -526,7 +526,7 @@ function analyzeCustomization(themeInfo, plugins) {
       analysis.indicators.push(`🎨 Child theme de "${parentName}" (personalización menor)`);
       analysis.category = 'customized-template';
     } else {
-      // Si no sabemos qué es el parent, asumimos desarrollo custom
+      // Si no sabemos qué es el parent, asumimos desarrollo personalizado
       score += 40;
       breakdown.push({ indicator: `Child theme de "${parentName}"`, points: 40, weight: 'muy fuerte' });
       analysis.indicators.push(`🔧 Child theme de "${parentName}" (desarrollo personalizado)`);
