@@ -537,7 +537,8 @@ async function detectPlugins(html, baseUrl) {
             activeInstalls: response.data.active_installs,
             lastUpdated: response.data.last_updated,
             requires: response.data.requires,
-            testedUpTo: response.data.tested
+            testedUpTo: response.data.tested,
+            icons: response.data.icons || null
           };
         }
       } catch (error) {
