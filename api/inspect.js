@@ -335,7 +335,7 @@ async function detectPlugins(html, baseUrl) {
   const $ = cheerio.load(html);
   const plugins = new Map();
 
-  // Buscar referencias a plugins en scripts y estilos
+  // MÉTODO 1: Buscar referencias a plugins en scripts y estilos
   const assets = [
     ...$('script[src]').toArray().map(el => $(el).attr('src')),
     ...$('link[rel="stylesheet"]').toArray().map(el => $(el).attr('href'))
@@ -362,7 +362,7 @@ async function detectPlugins(html, baseUrl) {
     }
   }
 
-  // Buscar también en comentarios HTML (algunos plugins dejan marcas)
+  // MÉTODO 2: Buscar en comentarios HTML
   const htmlContent = html.toString();
   const pluginComments = htmlContent.match(/<!--[^>]*wp-content\/plugins\/([^\/\s]+)/gi) || [];
   
@@ -382,34 +382,104 @@ async function detectPlugins(html, baseUrl) {
     }
   }
 
-  // Buscar en meta tags y data attributes
+  // MÉTODO 3: Detectar por clases CSS y atributos conocidos
+  const knownPlugins = [
+    { pattern: /elementor/i, slug: 'elementor' },
+    { pattern: /wpforms/i, slug: 'wpforms-lite' },
+    { pattern: /contact-form-7/i, slug: 'contact-form-7' },
+    { pattern: /yoast/i, slug: 'wordpress-seo' },
+    { pattern: /woocommerce/i, slug: 'woocommerce' },
+    { pattern: /jetpack/i, slug: 'jetpack' },
+    { pattern: /wp-rocket/i, slug: 'wp-rocket' },
+    { pattern: /wpbakery/i, slug: 'js_composer' },
+    { pattern: /visual-composer/i, slug: 'js_composer' },
+    { pattern: /rank-math/i, slug: 'seo-by-rank-math' },
+    { pattern: /all-in-one-seo/i, slug: 'all-in-one-seo-pack' },
+    { pattern: /wordfence/i, slug: 'wordfence' },
+    { pattern: /smush/i, slug: 'wp-smushit' },
+    { pattern: /akismet/i, slug: 'akismet' },
+    { pattern: /updraft/i, slug: 'updraftplus' },
+    { pattern: /gravityforms/i, slug: 'gravityforms' },
+    { pattern: /wpml/i, slug: 'sitepress-multilingual-cms' },
+    { pattern: /polylang/i, slug: 'polylang' }
+  ];
+
   $('[class*="wp-"], [id*="wp-"], [data-plugin], [class*="plugin-"]').each((i, el) => {
     const classNames = $(el).attr('class') || '';
     const id = $(el).attr('id') || '';
     const combined = `${classNames} ${id}`;
     
-    // Buscar patrones comunes de plugins
-    const patterns = [
-      /elementor/i,
-      /wpforms/i,
-      /contact-form-7/i,
-      /yoast/i,
-      /woocommerce/i,
-      /jetpack/i
-    ];
+    for (const { pattern, slug } of knownPlugins) {
+      if (pattern.test(combined) && !plugins.has(slug)) {
+        plugins.set(slug, {
+          slug: slug,
+          name: slug.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+          detectedFiles: ['HTML attributes'],
+          wpOrgUrl: `https://wordpress.org/plugins/${slug}/`,
+          info: null
+        });
+      }
+    }
+  });
+
+  // MÉTODO 4: Intentar obtener plugins desde la REST API
+  try {
+    const restUrl = new URL('/wp-json/wp/v2/plugins', baseUrl).href;
+    const restResponse = await axios.get(restUrl, { 
+      headers, 
+      timeout: 5000,
+      validateStatus: status => status < 500 
+    });
     
-    for (const pattern of patterns) {
-      if (pattern.test(combined)) {
-        const pluginSlug = pattern.source.replace(/\//g, '').toLowerCase();
-        if (!plugins.has(pluginSlug)) {
+    if (restResponse.status === 200 && Array.isArray(restResponse.data)) {
+      for (const plugin of restResponse.data) {
+        const pluginSlug = plugin.plugin?.split('/')[0] || plugin.slug;
+        
+        if (pluginSlug && !plugins.has(pluginSlug)) {
           plugins.set(pluginSlug, {
             slug: pluginSlug,
-            name: pluginSlug.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
-            detectedFiles: ['HTML attributes'],
+            name: plugin.name || pluginSlug.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+            detectedFiles: ['REST API'],
             wpOrgUrl: `https://wordpress.org/plugins/${pluginSlug}/`,
             info: null
           });
         }
+      }
+    }
+  } catch (error) {
+    // REST API no disponible o requiere autenticación
+  }
+
+  // MÉTODO 5: Detectar por meta tags y data-* attributes
+  $('meta[name*="generator"], meta[name*="plugin"]').each((i, el) => {
+    const content = $(el).attr('content') || '';
+    
+    for (const { pattern, slug } of knownPlugins) {
+      if (pattern.test(content) && !plugins.has(slug)) {
+        plugins.set(slug, {
+          slug: slug,
+          name: slug.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+          detectedFiles: ['Meta tag'],
+          wpOrgUrl: `https://wordpress.org/plugins/${slug}/`,
+          info: null
+        });
+      }
+    }
+  });
+
+  // MÉTODO 6: Analizar inline scripts que a veces declaran variables de plugins
+  $('script:not([src])').each((i, el) => {
+    const scriptContent = $(el).html() || '';
+    
+    for (const { pattern, slug } of knownPlugins) {
+      if (pattern.test(scriptContent) && !plugins.has(slug)) {
+        plugins.set(slug, {
+          slug: slug,
+          name: slug.replace(/-/g, ' ').replace(/\b\w/g, l => l.toUpperCase()),
+          detectedFiles: ['Inline script'],
+          wpOrgUrl: `https://wordpress.org/plugins/${slug}/`,
+          info: null
+        });
       }
     }
   });
