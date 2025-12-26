@@ -9,6 +9,37 @@ const headers = {
   'Accept-Language': 'es-MX,es;q=0.9,en;q=0.8',
 };
 
+// Función para extraer nombre limpio del sitio
+function extractSiteName(url) {
+  try {
+    const urlObj = new URL(url);
+    let hostname = urlObj.hostname;
+    
+    // Remover www.
+    hostname = hostname.replace(/^www\./, '');
+    
+    // Remover extensiones comunes
+    const extensions = [
+      '.com.mx', '.co.uk', '.com.br', '.com.ar', // Multi-parte primero
+      '.com', '.net', '.org', '.edu', '.gov', '.mx', '.es', '.io',
+      '.co', '.uk', '.us', '.ca', '.de', '.fr', '.it', '.jp',
+      '.br', '.ar', '.cl', '.pe', '.ve', '.uy'
+    ];
+    
+    for (const ext of extensions) {
+      if (hostname.endsWith(ext)) {
+        hostname = hostname.slice(0, -ext.length);
+        break; // Solo remover una extensión
+      }
+    }
+    
+    // Capitalizar primera letra
+    return hostname.charAt(0).toUpperCase() + hostname.slice(1);
+  } catch (error) {
+    return 'Sitio';
+  }
+}
+
 // Función para detectar WordPress
 async function detectWordPress(html, url) {
   const $ = cheerio.load(html);
@@ -872,6 +903,7 @@ module.exports = async function handler(req, res) {
     // Respuesta completa
     return res.status(200).json({
       url: targetUrl.href,
+      siteName: extractSiteName(targetUrl.href),
       isWordPress: true,
       scannedAt: new Date().toISOString(),
       theme: themeInfo,
