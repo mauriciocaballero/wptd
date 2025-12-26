@@ -502,7 +502,7 @@ function analyzeCustomization(themeInfo, plugins) {
   ];
   
   const freeMarket = freeMarketplaces.find(m => themeInfo.uri?.includes(m.domain));
-  if (freeMarket && !analysis.category) {
+  if (freeMarket) {
     score -= 40;
     breakdown.push({ indicator: `Theme gratuito de ${freeMarket.name}`, points: -40, weight: 'muy fuerte' });
     analysis.indicators.push(`🆓 Theme gratuito de ${freeMarket.name}`);
