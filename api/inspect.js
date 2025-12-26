@@ -538,7 +538,13 @@ async function detectPlugins(html, baseUrl) {
             lastUpdated: response.data.last_updated,
             requires: response.data.requires,
             testedUpTo: response.data.tested,
-            icons: response.data.icons || null
+            icons: response.data.icons || {
+              // Fallback: construir URLs de iconos basados en el slug
+              '2x': `https://ps.w.org/${plugin.slug}/assets/icon-256x256.png`,
+              '1x': `https://ps.w.org/${plugin.slug}/assets/icon-128x128.png`,
+              'svg': `https://ps.w.org/${plugin.slug}/assets/icon.svg`,
+              'default': `https://s.w.org/plugins/geopattern-icon/${plugin.slug}.svg`
+            }
           };
         }
       } catch (error) {
