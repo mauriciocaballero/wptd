@@ -103,7 +103,23 @@ async function detectWordPress(html, url) {
     wpSignals.customThemeStructure = true;
   }
 
-  const isWordPress = Object.values(wpSignals).some(signal => signal === true);
+  // Contar señales fuertes (las más confiables)
+  const strongSignals = [
+    wpSignals.wpContent,
+    wpSignals.wpIncludes,
+    wpSignals.metaGenerator,
+    wpSignals.wpJson,
+    wpSignals.bodyClass,
+    wpSignals.adminAjax,
+    wpSignals.wpEmojiRelease
+  ];
+
+  const strongSignalCount = strongSignals.filter(s => s === true).length;
+  
+  // Requiere al menos 2 señales fuertes O 1 señal muy fuerte (wpContent + wpIncludes)
+  const isWordPress = strongSignalCount >= 2 || 
+                     (wpSignals.wpContent && wpSignals.wpIncludes) ||
+                     (wpSignals.metaGenerator && wpSignals.wpJson);
   
   return { isWordPress, signals: wpSignals };
 }
